@@ -29,7 +29,7 @@ class Config:
     agent_speed:        float = 3.5
     vision_radius:      int   = 25    # px — how far an agent can spot a carrot
     collect_radius:     int   = 5    # px — pickup distance
-    direction_change_prob: float = 0.02  # low = long straight runs
+    direction_change_prob: float = 0.04  # low = long straight runs
 
     # ── Survival & reproduction ───────────────────────────────────────────────
     survival_threshold: float = 5.0   # points needed to survive the day
@@ -37,6 +37,7 @@ class Config:
 
     # ── Village ───────────────────────────────────────────────────────────────
     tent_capacity:      int   = 10    # inhabitants per tent
+    tent_spawn_radius:  int   = 30    # px — random scatter around tent at day start
     day_steps:          int   = 250   # simulation ticks per day
 
     # ── Cows (used only when enable_cows=True) ────────────────────────────────

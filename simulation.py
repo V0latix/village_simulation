@@ -33,15 +33,11 @@ class World:
         self.village_capacity = max(cfg.tent_capacity, len(STRATEGIES))
         tents = self.tent_positions()
         for i, s in enumerate(STRATEGIES):
-            if cfg.show_tents:
-                tent_idx = i % len(tents)
-                cx, cy = tents[tent_idx]
-                x = cx + random.uniform(-10, 10)
-                y = cy + random.uniform(-5, 5)
-            else:
-                tent_idx = 0
-                x = random.uniform(40, self.width - 40)
-                y = random.uniform(40, self.height - 40)
+            tent_idx = i % len(tents)  # distribute round-robin across tents
+            x, y = _spawn_near_tent(tents[tent_idx], cfg) if cfg.show_tents else (
+                random.uniform(40, self.width - 40),
+                random.uniform(40, self.height - 40),
+            )
             self.agents.append(self._new_agent(x, y, s, tent_idx))
 
     def _new_agent(self, x, y, share_pref, home_tent: int = 0) -> Agent:
@@ -116,9 +112,7 @@ class Simulation:
             a.partner_id = None
             if w.cfg.show_tents:
                 tent_idx = min(a.home_tent, len(tents) - 1)
-                cx, cy = tents[tent_idx]
-                a.x = cx + random.uniform(-12, 12)
-                a.y = cy + random.uniform(-8, 8)
+                a.x, a.y = _spawn_near_tent(tents[tent_idx], w.cfg)
             a.vx, a.vy = _random_velocity(w.cfg.agent_speed)
         w.carrots = [c for c in w.carrots if c.active]
         if w.cfg.enable_cows:
@@ -259,11 +253,21 @@ def _reproduce(w: World) -> List[Agent]:
                 x=a.x + random.uniform(-20, 20),
                 y=a.y + random.uniform(-20, 20),
                 share_pref=a.share_pref,
-                home_tent=a.home_tent,
+                home_tent=_least_populated_tent(w),
             )
             newborns.append(child)
     w.agents.extend(newborns)
     return newborns
+
+
+def _least_populated_tent(w: World) -> int:
+    """Return the tent index with the fewest assigned living agents."""
+    num_tents = w.num_tents
+    counts = [0] * num_tents
+    for a in w.living_agents:
+        idx = min(a.home_tent, num_tents - 1)
+        counts[idx] += 1
+    return counts.index(min(counts))
 
 
 def _mutate(newborns: List[Agent], rate: float):
@@ -308,3 +312,11 @@ def _record_stats(w: World):
 
 def _dist(x1, y1, x2, y2) -> float:
     return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+
+def _spawn_near_tent(tent: tuple, cfg) -> tuple:
+    """Random position within tent_spawn_radius of the tent center."""
+    cx, cy = tent
+    angle = random.uniform(0, 2 * math.pi)
+    r = random.uniform(0, cfg.tent_spawn_radius)
+    return cx + math.cos(angle) * r, cy + math.sin(angle) * r

@@ -171,10 +171,6 @@ class Renderer:
             self.screen.blit(self.font_s.render(str(count), True, WHITE), (px + 54 + bar_area_w, y + 4))
             y += bar_h + gap
 
-        y += 14
-        label, color = _detect_phase(w)
-        self.screen.blit(self.font_m.render(f"Phase: {label}", True, color), (px + 10, y))
-
         if len(w.stats) > 1:
             y += 36
             self.screen.blit(self.font_s.render("Préférence moyenne", True, GREY), (px + 10, y))
@@ -200,19 +196,3 @@ class Renderer:
             y += 16
 
 
-def _detect_phase(w: World):
-    if not w.stats:
-        return "—", WHITE
-    dist = w.stats[-1].get("dist", {})
-    pop  = w.stats[-1].get("pop", 0)
-    if pop == 0:
-        return "—", WHITE
-    eg  = sum(dist.get(s, 0) for s in [0.7, 0.8, 0.9])
-    gen = sum(dist.get(s, 0) for s in [0.1, 0.2, 0.3])
-    mod = sum(dist.get(s, 0) for s in [0.4, 0.5, 0.6])
-    dom = max(eg, gen, mod)
-    if dom == eg  and eg  > pop * 0.4:
-        return "A — égoïstes dominent", (255, 100, 100)
-    if dom == mod and mod > pop * 0.4:
-        return "C — équilibre",          (100, 255, 100)
-    return "B — transition",             (255, 200, 60)
