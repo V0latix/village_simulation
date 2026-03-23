@@ -30,10 +30,11 @@ class World:
 
     def _init_population(self):
         cfg = self.cfg
-        self.village_capacity = max(cfg.tent_capacity, len(STRATEGIES))
+        self.village_capacity = cfg.tent_capacity
         tents = self.tent_positions()
-        for i, s in enumerate(STRATEGIES):
-            tent_idx = i % len(tents)  # distribute round-robin across tents
+        for i in range(cfg.initial_population):
+            s = STRATEGIES[i % len(STRATEGIES)]
+            tent_idx = i % len(tents)
             x, y = _spawn_near_tent(tents[tent_idx], cfg) if cfg.show_tents else (
                 random.uniform(40, self.width - 40),
                 random.uniform(40, self.height - 40),

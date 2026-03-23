@@ -36,6 +36,7 @@ class Config:
     mutation_rate:      float = 0.15  # probability a child mutates ±1 strategy
 
     # ── Village ───────────────────────────────────────────────────────────────
+    initial_population: int   = 1     # number of villagers at start
     tent_capacity:      int   = 10    # inhabitants per tent
     tent_spawn_radius:  int   = 30    # px — random scatter around tent at day start
     day_steps:          int   = 250   # simulation ticks per day
@@ -70,7 +71,7 @@ def main():
     clock = pygame.time.Clock()
 
     paused = False
-    speed = 1
+    speed = 4
     step_in_day = 0
     day_started = False
     step_acc = 0.0
