@@ -1,41 +1,27 @@
 import random
 import math
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING
+
 from entities import Agent, Carrot, Cow, STRATEGIES
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-
-WORLD_W = 900
-WORLD_H = 700
-
-SURVIVAL_THRESHOLD = 5
-COW_VALUE = 10
-CARROT_VALUE = 1
-TARGET_COWS = 16
-TARGET_CARROTS = 180
-TENT_CAPACITY = 10
-COLLECT_RADIUS = 28
-HUNT_RADIUS = 50
-AGENT_SPEED = 3.5
-COW_SPEED = 1.2
-MUTATION_RATE = 0.15
-DIRECTION_CHANGE_PROB = 0.06  # probability to change direction each step
-DAY_STEPS = 120               # simulation steps per day
+if TYPE_CHECKING:
+    from main import Config
 
 
 # ── World ──────────────────────────────────────────────────────────────────────
 
 class World:
-    def __init__(self):
-        self.width = WORLD_W
-        self.height = WORLD_H
+    def __init__(self, cfg: "Config"):
+        self.cfg = cfg
+        self.width  = cfg.world_w
+        self.height = cfg.world_h
         self.agents: List[Agent] = []
         self.carrots: List[Carrot] = []
         self.cows: List[Cow] = []
         self.day = 0
         self.next_id = 0
-        self.village_capacity = TENT_CAPACITY  # total village cap
-        self.stats: List[dict] = []            # one dict per day
+        self.village_capacity = cfg.tent_capacity
+        self.stats: List[dict] = []
 
         self._init_population()
         self._spawn_resources()
@@ -43,43 +29,44 @@ class World:
     # ── Init ──────────────────────────────────────────────────────────────────
 
     def _init_population(self):
-        # Start with one agent of each strategy
-        self.village_capacity = max(TENT_CAPACITY, len(STRATEGIES))
+        cfg = self.cfg
+        self.village_capacity = max(cfg.tent_capacity, len(STRATEGIES))
         tents = self.tent_positions()
         for i, s in enumerate(STRATEGIES):
-            tent_idx = i % len(tents)
-            cx, cy = tents[tent_idx]
-            a = self._new_agent(
-                x=cx + random.uniform(-10, 10),
-                y=cy + random.uniform(-5, 5),
-                share_pref=s,
-                home_tent=tent_idx,
-            )
-            self.agents.append(a)
+            if cfg.show_tents:
+                tent_idx = i % len(tents)
+                cx, cy = tents[tent_idx]
+                x = cx + random.uniform(-10, 10)
+                y = cy + random.uniform(-5, 5)
+            else:
+                tent_idx = 0
+                x = random.uniform(40, self.width - 40)
+                y = random.uniform(40, self.height - 40)
+            self.agents.append(self._new_agent(x, y, s, tent_idx))
 
     def _new_agent(self, x, y, share_pref, home_tent: int = 0) -> Agent:
         a = Agent(id=self.next_id, x=x, y=y, share_pref=share_pref, home_tent=home_tent)
-        a.vx, a.vy = _random_velocity(AGENT_SPEED)
+        a.vx, a.vy = _random_velocity(self.cfg.agent_speed)
         self.next_id += 1
         return a
 
     def _spawn_resources(self):
-        # Top up carrots
-        active_carrots = sum(1 for c in self.carrots if c.active)
-        for _ in range(TARGET_CARROTS - active_carrots):
+        cfg = self.cfg
+        active = sum(1 for c in self.carrots if c.active)
+        for _ in range(cfg.target_carrots - active):
             self.carrots.append(Carrot(
                 x=random.uniform(20, self.width - 20),
                 y=random.uniform(20, self.height - 20),
             ))
-        # Top up cows
-        active_cows = sum(1 for c in self.cows if c.active)
-        for _ in range(TARGET_COWS - active_cows):
-            cow = Cow(
-                x=random.uniform(40, self.width - 40),
-                y=random.uniform(40, self.height - 40),
-            )
-            cow.vx, cow.vy = _random_velocity(COW_SPEED)
-            self.cows.append(cow)
+        if cfg.enable_cows:
+            active_cows = sum(1 for c in self.cows if c.active)
+            for _ in range(cfg.target_cows - active_cows):
+                cow = Cow(
+                    x=random.uniform(40, self.width - 40),
+                    y=random.uniform(40, self.height - 40),
+                )
+                cow.vx, cow.vy = _random_velocity(cfg.cow_speed)
+                self.cows.append(cow)
 
     # ── Properties ────────────────────────────────────────────────────────────
 
@@ -97,24 +84,20 @@ class World:
 
     @property
     def num_tents(self) -> int:
-        return math.ceil(self.village_capacity / TENT_CAPACITY)
+        return math.ceil(self.village_capacity / self.cfg.tent_capacity)
 
     def tent_positions(self) -> List[tuple]:
-        """Returns (cx, cy) for each tent — shared by simulation and renderer."""
+        """Grid of tent positions, centered on the world. First tent = center."""
         num = self.num_tents
-        cols = max(1, min(num, 6))
-        margin_x = 60
-        margin_y = 30
-        spacing_x = (self.width - 2 * margin_x) // max(cols, 1)
-        spacing_y = 70
-        positions = []
-        for i in range(num):
-            col = i % cols
-            row = i // cols
-            cx = margin_x + col * spacing_x
-            cy = margin_y + row * spacing_y
-            positions.append((cx, cy))
-        return positions
+        cols = min(num, 6)
+        rows = math.ceil(num / cols)
+        sx, sy = 110, 90
+        start_x = self.width  // 2 - (cols - 1) * sx // 2
+        start_y = self.height // 2 - (rows - 1) * sy // 2
+        return [
+            (start_x + (i % cols) * sx, start_y + (i // cols) * sy)
+            for i in range(num)
+        ]
 
 
 # ── Simulation ─────────────────────────────────────────────────────────────────
@@ -131,33 +114,33 @@ class Simulation:
             a.score = 0.0
             a.hunted_today = False
             a.partner_id = None
-            # Place agent back at their home tent
-            tent_idx = min(a.home_tent, len(tents) - 1)
-            cx, cy = tents[tent_idx]
-            a.x = cx + random.uniform(-12, 12)
-            a.y = cy + random.uniform(-8, 8)
-            a.vx, a.vy = _random_velocity(AGENT_SPEED)
-        # Remove spent resources
+            if w.cfg.show_tents:
+                tent_idx = min(a.home_tent, len(tents) - 1)
+                cx, cy = tents[tent_idx]
+                a.x = cx + random.uniform(-12, 12)
+                a.y = cy + random.uniform(-8, 8)
+            a.vx, a.vy = _random_velocity(w.cfg.agent_speed)
         w.carrots = [c for c in w.carrots if c.active]
-        w.cows = [c for c in w.cows if c.active]
+        if w.cfg.enable_cows:
+            w.cows = [c for c in w.cows if c.active]
         w._spawn_resources()
 
     def step(self):
-        """One movement + collection tick."""
         w = self.world
         _move_agents(w)
-        _move_cows(w)
+        if w.cfg.enable_cows:
+            _move_cows(w)
         _collect_carrots(w)
 
     def end_day(self):
         w = self.world
-        _perform_hunts(w)
+        if w.cfg.enable_cows:
+            _perform_hunts(w)
         _resolve_survival(w)
         newborns = _reproduce(w)
-        _mutate(newborns)
+        _mutate(newborns, w.cfg.mutation_rate)
         _expand_village(w)
         _record_stats(w)
-        # Compact dead agents periodically
         if len(w.agents) > 2000:
             w.agents = w.living_agents
 
@@ -170,48 +153,67 @@ def _random_velocity(speed: float) -> Tuple[float, float]:
 
 
 def _move_agents(w: World):
+    cfg = w.cfg
+    carrots = w.active_carrots
     for a in w.living_agents:
-        if random.random() < DIRECTION_CHANGE_PROB:
-            a.vx, a.vy = _random_velocity(AGENT_SPEED)
+        target = _nearest_in_range(a.x, a.y, carrots, cfg.vision_radius)
+        if target is not None:
+            dx = target.x - a.x
+            dy = target.y - a.y
+            d = math.sqrt(dx * dx + dy * dy)
+            if d > 0:
+                a.vx = dx / d * cfg.agent_speed
+                a.vy = dy / d * cfg.agent_speed
+        else:
+            if random.random() < cfg.direction_change_prob:
+                a.vx, a.vy = _random_velocity(cfg.agent_speed)
         a.x = (a.x + a.vx) % w.width
         a.y = (a.y + a.vy) % w.height
 
 
 def _move_cows(w: World):
+    cfg = w.cfg
     for c in w.active_cows:
-        if random.random() < DIRECTION_CHANGE_PROB:
-            c.vx, c.vy = _random_velocity(COW_SPEED)
+        if random.random() < cfg.direction_change_prob:
+            c.vx, c.vy = _random_velocity(cfg.cow_speed)
         c.x = (c.x + c.vx) % w.width
         c.y = (c.y + c.vy) % w.height
+
+
+def _nearest_in_range(x, y, items, radius):
+    best, best_d = None, radius
+    for item in items:
+        d = _dist(x, y, item.x, item.y)
+        if d < best_d:
+            best_d = d
+            best = item
+    return best
 
 
 # ── Resource collection ────────────────────────────────────────────────────────
 
 def _collect_carrots(w: World):
+    r = w.cfg.collect_radius
     for a in w.living_agents:
         for c in w.active_carrots:
-            if _dist(a.x, a.y, c.x, c.y) < COLLECT_RADIUS:
-                a.score += CARROT_VALUE
+            if _dist(a.x, a.y, c.x, c.y) < r:
+                a.score += w.cfg.carrot_value
                 c.active = False
-                break  # one carrot per step
+                break
 
 
 # ── Cooperative hunting ────────────────────────────────────────────────────────
 
 def _perform_hunts(w: World):
-    """Greedily pair agents that are close to a cow and haven't hunted today."""
     available = [a for a in w.living_agents if not a.hunted_today]
     random.shuffle(available)
-
     for cow in w.active_cows:
-        # Find up to 2 available agents near this cow
-        nearby = [a for a in available if _dist(a.x, a.y, cow.x, cow.y) < HUNT_RADIUS * 4]
+        nearby = [a for a in available if _dist(a.x, a.y, cow.x, cow.y) < w.cfg.hunt_radius * 4]
         if len(nearby) < 2:
             continue
         a1, a2 = nearby[0], nearby[1]
-        _resolve_hunt(a1, a2)
-        a1.hunted_today = True
-        a2.hunted_today = True
+        _resolve_hunt(a1, a2, w.cfg.cow_value)
+        a1.hunted_today = a2.hunted_today = True
         a1.partner_id = a2.id
         a2.partner_id = a1.id
         cow.active = False
@@ -219,21 +221,15 @@ def _perform_hunts(w: World):
         available.remove(a2)
 
 
-def _resolve_hunt(a: Agent, b: Agent):
-    """Apply sharing rules and update scores."""
+def _resolve_hunt(a: Agent, b: Agent, cow_value: float):
     pa, pb = a.share_pref, b.share_pref
     total = pa + pb
-
     if abs(total - 1.0) < 1e-9:
-        # Case 1: complementary — exact split
-        a.score += COW_VALUE * pa
-        b.score += COW_VALUE * pb
+        a.score += cow_value * pa
+        b.score += cow_value * pb
     elif total < 1.0:
-        # Case 2: under-claimed — each takes their share, split the rest
-        base_a = COW_VALUE * pa
-        base_b = COW_VALUE * pb
-        leftover = COW_VALUE - base_a - base_b
-        # Split leftover; greedier gets the bigger half if it can't split evenly
+        base_a, base_b = cow_value * pa, cow_value * pb
+        leftover = cow_value - base_a - base_b
         if pa >= pb:
             a.score += base_a + math.ceil(leftover / 2)
             b.score += base_b + math.floor(leftover / 2)
@@ -241,24 +237,24 @@ def _resolve_hunt(a: Agent, b: Agent):
             a.score += base_a + math.floor(leftover / 2)
             b.score += base_b + math.ceil(leftover / 2)
     else:
-        # Case 3: conflict — forced equal split (penalizes the greedy)
-        a.score += COW_VALUE / 2
-        b.score += COW_VALUE / 2
+        a.score += cow_value / 2
+        b.score += cow_value / 2
 
 
 # ── Survival & reproduction ────────────────────────────────────────────────────
 
 def _resolve_survival(w: World):
+    t = w.cfg.survival_threshold
     for a in w.living_agents:
-        if a.score < SURVIVAL_THRESHOLD:
+        if a.score < t:
             a.alive = False
 
 
 def _reproduce(w: World) -> List[Agent]:
+    t = w.cfg.survival_threshold
     newborns = []
     for a in w.living_agents:
-        num_children = int((a.score - SURVIVAL_THRESHOLD) // SURVIVAL_THRESHOLD)
-        for _ in range(num_children):
+        for _ in range(int((a.score - t) // t)):
             child = w._new_agent(
                 x=a.x + random.uniform(-20, 20),
                 y=a.y + random.uniform(-20, 20),
@@ -270,9 +266,9 @@ def _reproduce(w: World) -> List[Agent]:
     return newborns
 
 
-def _mutate(newborns: List[Agent]):
+def _mutate(newborns: List[Agent], rate: float):
     for a in newborns:
-        if random.random() < MUTATION_RATE:
+        if random.random() < rate:
             idx = STRATEGIES.index(a.share_pref)
             if idx == 0:
                 a.share_pref = STRATEGIES[1]
@@ -287,19 +283,19 @@ def _mutate(newborns: List[Agent]):
 def _expand_village(w: World):
     pop = len(w.living_agents)
     while w.village_capacity < pop:
-        w.village_capacity += TENT_CAPACITY
+        w.village_capacity += w.cfg.tent_capacity
 
 
 # ── Statistics ────────────────────────────────────────────────────────────────
 
 def _record_stats(w: World):
     living = w.living_agents
-    if not living:
-        w.stats.append({"day": w.day, "pop": 0, "dist": {s: 0 for s in STRATEGIES}})
-        return
     dist = {s: 0 for s in STRATEGIES}
+    if not living:
+        w.stats.append({"day": w.day, "pop": 0, "dist": dist})
+        return
     for a in living:
-        dist[a.share_pref] = dist.get(a.share_pref, 0) + 1
+        dist[a.share_pref] += 1
     w.stats.append({
         "day": w.day,
         "pop": len(living),
