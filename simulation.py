@@ -22,8 +22,12 @@ class World:
         self.next_id = 0
         self.village_capacity = cfg.tent_capacity
         self.stats: List[dict] = []
-        self.day_carrots = 0   # carrots collected this day
-        self.day_cows    = 0   # cows hunted this day
+        self.day_carrots = 0
+        self.day_cows    = 0
+        self._living:  List[Agent]  = []
+        self._carrots: List[Carrot] = []
+        self._cows:    List[Cow]    = []
+        self._grid = SpatialGrid(cell_size=max(cfg.vision_radius, 1))
 
         self._init_population()
         self._spawn_resources()
@@ -119,13 +123,18 @@ class Simulation:
             a.vx, a.vy = _random_velocity(w.cfg.agent_speed)
         w.day_carrots = 0
         w.day_cows    = 0
-        w.carrots = [c for c in w.carrots if c.active]
+        w.carrots = []  # reset all carrots each day
         if w.cfg.enable_cows:
             w.cows = [c for c in w.cows if c.active]
         w._spawn_resources()
 
     def step(self):
         w = self.world
+        # Cache once per step — avoids rebuilding lists in every sub-function
+        w._living  = [a for a in w.agents  if a.alive]
+        w._carrots = [c for c in w.carrots if c.active]
+        w._cows    = [c for c in w.cows    if c.active] if w.cfg.enable_cows else []
+        w._grid.build(w._carrots)  # spatial index for fast vision queries
         _move_agents(w)
         if w.cfg.enable_cows:
             _move_cows(w)
@@ -153,9 +162,9 @@ def _random_velocity(speed: float) -> Tuple[float, float]:
 
 def _move_agents(w: World):
     cfg = w.cfg
-    carrots = w.active_carrots
-    for a in w.living_agents:
-        target = _nearest_in_range(a.x, a.y, carrots, cfg.vision_radius)
+    carrots = w._carrots
+    for a in w._living:
+        target = w._grid.nearest_in_radius(a.x, a.y, cfg.vision_radius)
         if target is not None:
             dx = target.x - a.x
             dy = target.y - a.y
@@ -172,7 +181,7 @@ def _move_agents(w: World):
 
 def _move_cows(w: World):
     cfg = w.cfg
-    for c in w.active_cows:
+    for c in w._cows:
         if random.random() < cfg.direction_change_prob:
             c.vx, c.vy = _random_velocity(cfg.cow_speed)
         c.x = (c.x + c.vx) % w.width
@@ -189,12 +198,44 @@ def _nearest_in_range(x, y, items, radius):
     return best
 
 
+class SpatialGrid:
+    """Buckets items by grid cell for fast radius queries."""
+    def __init__(self, cell_size: int):
+        self.cell  = cell_size
+        self.grid: dict = {}
+
+    def build(self, items):
+        self.grid.clear()
+        c = self.cell
+        for item in items:
+            key = (int(item.x / c), int(item.y / c))
+            if key not in self.grid:
+                self.grid[key] = []
+            self.grid[key].append(item)
+
+    def nearest_in_radius(self, x, y, radius):
+        c      = self.cell
+        steps  = math.ceil(radius / c) + 1
+        cx, cy = int(x / c), int(y / c)
+        best, best_d = None, radius
+        for dx in range(-steps, steps + 1):
+            for dy in range(-steps, steps + 1):
+                bucket = self.grid.get((cx + dx, cy + dy))
+                if bucket:
+                    for item in bucket:
+                        d = _dist(x, y, item.x, item.y)
+                        if d < best_d:
+                            best_d = d
+                            best   = item
+        return best
+
+
 # ── Resource collection ────────────────────────────────────────────────────────
 
 def _collect_carrots(w: World):
     r = w.cfg.collect_radius
-    for a in w.living_agents:
-        for c in w.active_carrots:
+    for a in w._living:
+        for c in w._carrots:
             if _dist(a.x, a.y, c.x, c.y) < r:
                 a.score += w.cfg.carrot_value
                 c.active = False

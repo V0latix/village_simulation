@@ -54,7 +54,7 @@ cfg = Config()
 
 # ══════════════════════════════════════════════════════════════════════════════
 
-FPS = 60
+FPS = 30          # 30 fps is imperceptible vs 60 but halves GPU work
 MIN_SPEED = 1
 MAX_SPEED = 60
 # At speed=1 → 1 real minute per day
