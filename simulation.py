@@ -138,12 +138,11 @@ class Simulation:
         _move_agents(w)
         if w.cfg.enable_cows:
             _move_cows(w)
+            _try_hunts(w)
         _collect_carrots(w)
 
     def end_day(self):
         w = self.world
-        if w.cfg.enable_cows:
-            _perform_hunts(w)
         _resolve_survival(w)
         newborns = _reproduce(w)
         _mutate(newborns, w.cfg.mutation_rate)
@@ -162,7 +161,6 @@ def _random_velocity(speed: float) -> Tuple[float, float]:
 
 def _move_agents(w: World):
     cfg = w.cfg
-    carrots = w._carrots
     for a in w._living:
         target = w._grid.nearest_in_radius(a.x, a.y, cfg.vision_radius)
         if target is not None:
@@ -172,6 +170,18 @@ def _move_agents(w: World):
             if d > 0:
                 a.vx = dx / d * cfg.agent_speed
                 a.vy = dy / d * cfg.agent_speed
+        elif cfg.enable_cows and not a.hunted_today:
+            cow_target = _nearest_in_range(a.x, a.y, w._cows, cfg.vision_radius)
+            if cow_target is not None:
+                dx = cow_target.x - a.x
+                dy = cow_target.y - a.y
+                d = math.sqrt(dx * dx + dy * dy)
+                if d > 0:
+                    a.vx = dx / d * cfg.agent_speed
+                    a.vy = dy / d * cfg.agent_speed
+            else:
+                if random.random() < cfg.direction_change_prob:
+                    a.vx, a.vy = _random_velocity(cfg.agent_speed)
         else:
             if random.random() < cfg.direction_change_prob:
                 a.vx, a.vy = _random_velocity(cfg.agent_speed)
@@ -245,11 +255,12 @@ def _collect_carrots(w: World):
 
 # ── Cooperative hunting ────────────────────────────────────────────────────────
 
-def _perform_hunts(w: World):
-    available = [a for a in w.living_agents if not a.hunted_today]
-    random.shuffle(available)
-    for cow in w.active_cows:
-        nearby = [a for a in available if _dist(a.x, a.y, cow.x, cow.y) < w.cfg.hunt_radius * 4]
+def _try_hunts(w: World):
+    hunters = [a for a in w._living if not a.hunted_today]
+    for cow in w._cows:
+        if not cow.active:
+            continue
+        nearby = [a for a in hunters if _dist(a.x, a.y, cow.x, cow.y) < w.cfg.hunt_radius]
         if len(nearby) < 2:
             continue
         a1, a2 = nearby[0], nearby[1]
@@ -259,8 +270,8 @@ def _perform_hunts(w: World):
         a2.partner_id = a1.id
         cow.active = False
         w.day_cows += 1
-        available.remove(a1)
-        available.remove(a2)
+        hunters.remove(a1)
+        hunters.remove(a2)
 
 
 def _resolve_hunt(a: Agent, b: Agent, cow_value: float):

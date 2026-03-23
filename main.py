@@ -1,4 +1,6 @@
 import sys
+import csv
+import datetime
 from dataclasses import dataclass
 import pygame
 from simulation import World, Simulation
@@ -27,7 +29,7 @@ class Config:
 
     # ── Agents ────────────────────────────────────────────────────────────────
     agent_speed:        float = 3.5
-    vision_radius:      int   = 25    # px — how far an agent can spot a carrot
+    vision_radius:      int   = 50    # px — how far an agent can spot a carrot
     collect_radius:     int   = 5    # px — pickup distance
     direction_change_prob: float = 0.04  # low = long straight runs
 
@@ -59,6 +61,25 @@ MIN_SPEED = 1
 MAX_SPEED = 60
 # At speed=1 → 1 real minute per day
 STEPS_PER_SEC_BASE = cfg.day_steps / 60.0
+
+
+def _save_stats(world: World):
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"simulation_{ts}.csv"
+    with open(filename, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["day", "pop", "mean_pref", "carrots", "cows"] +
+                        [f"strat_{s}" for s in [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]])
+        for s in world.stats:
+            dist = s.get("dist", {})
+            writer.writerow([
+                s.get("day", ""),
+                s.get("pop", ""),
+                f"{s['mean_pref']:.4f}" if s.get("mean_pref") is not None else "",
+                s.get("carrots", ""),
+                s.get("cows", ""),
+            ] + [dist.get(k, 0) for k in [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]])
+    print(f"Simulation sauvegardée : {filename}")
 
 
 def main():
@@ -95,8 +116,13 @@ def main():
                     step_in_day = 0
                     day_started = False
                     step_acc = 0.0
+                elif event.key == pygame.K_s:
+                    _save_stats(world)
                 elif event.key == pygame.K_ESCAPE:
                     running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if renderer.save_btn_rect.collidepoint(event.pos):
+                    _save_stats(world)
 
         if not paused:
             step_acc += speed * STEPS_PER_SEC_BASE / FPS

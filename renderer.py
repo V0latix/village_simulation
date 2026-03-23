@@ -51,6 +51,7 @@ class Renderer:
         self.font_m  = pygame.font.SysFont("monospace", 15, bold=True)
         self.font_l  = pygame.font.SysFont("monospace", 20, bold=True)
         self.font_xl = pygame.font.SysFont("monospace", 26, bold=True)
+        self.save_btn_rect = pygame.Rect(0, 0, 0, 0)
         # Pre-render vision surfaces (one per strategy)
         vr = cfg.vision_radius
         self._vision_surfs = {}
@@ -231,24 +232,41 @@ class Renderer:
             y = _draw_history_chart(
                 self.screen, self.font_s, w.stats, "carrots",
                 (255, 140, 0), "Carottes / jour",
-                px + 10, y, chart_w, 60,
+                px + 10, y, chart_w, 45,
             )
-            y += 10
+            y += 8
             # Cows per day (only if cows enabled)
             if cfg.enable_cows:
                 y = _draw_history_chart(
                     self.screen, self.font_s, w.stats, "cows",
                     (160, 110, 60), "Vaches / jour",
-                    px + 10, y, chart_w, 50,
+                    px + 10, y, chart_w, 40,
                 )
-                y += 10
+                y += 8
             # Mean preference
             y = _draw_history_chart(
                 self.screen, self.font_s, w.stats, "mean_pref",
                 (100, 200, 255), "Préf. moyenne",
-                px + 10, y, chart_w, 60,
+                px + 10, y, chart_w, 45,
                 y_range=(0.1, 0.9),
             )
+            y += 8
+            # Population
+            y = _draw_history_chart(
+                self.screen, self.font_s, w.stats, "pop",
+                (120, 220, 120), "Population",
+                px + 10, y, chart_w, 45,
+            )
+
+        # ── Save button ───────────────────────────────────────────────────────
+        btn_w, btn_h = pw - 20, 26
+        btn_x = px + 10
+        btn_y = self.screen_h - 82
+        self.save_btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+        pygame.draw.rect(self.screen, (40, 100, 40), self.save_btn_rect, border_radius=4)
+        pygame.draw.rect(self.screen, (80, 180, 80), self.save_btn_rect, 1, border_radius=4)
+        lbl = self.font_m.render("[S]  Sauvegarder", True, WHITE)
+        self.screen.blit(lbl, (btn_x + (btn_w - lbl.get_width()) // 2, btn_y + (btn_h - lbl.get_height()) // 2))
 
         # Controls at bottom
         ctrl_y = self.screen_h - 52
