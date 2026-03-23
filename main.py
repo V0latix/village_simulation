@@ -12,12 +12,12 @@ from renderer import Renderer
 @dataclass
 class Config:
     # ── Feature flags ─────────────────────────────────────────────────────────
-    enable_cows:  bool  = False  # cooperative cow hunting
+    enable_cows:  bool  = True  # cooperative cow hunting
     show_tents:   bool  = True   # draw tents + reset agents there each morning
 
     # ── World ─────────────────────────────────────────────────────────────────
-    world_w:      int   = 900
-    world_h:      int   = 700
+    world_w:      int   = 1200
+    world_h:      int   = 850
 
     # ── Resources ─────────────────────────────────────────────────────────────
     target_carrots:     int   = 300
@@ -116,7 +116,7 @@ def main():
                         step_acc = 0.0
                         break
 
-        renderer.draw(paused=paused, speed=speed)
+        renderer.draw(paused=paused, speed=speed, step_in_day=step_in_day)
         clock.tick(FPS)
 
     pygame.quit()

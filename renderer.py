@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from main import Config
 
-# ── Static palette (not user-tunable) ─────────────────────────────────────────
+# ── Static palette ─────────────────────────────────────────────────────────────
 
 BG_COLOR     = (34, 85, 34)
 GRID_COLOR   = (30, 75, 30)
@@ -18,6 +18,7 @@ TENT_OUTLINE = (140, 110, 60)
 PANEL_BG     = (20, 20, 30)
 WHITE        = (240, 240, 240)
 GREY         = (160, 160, 160)
+DARK         = (40, 40, 55)
 
 STRATEGY_LABELS = {
     0.1: "10%", 0.2: "20%", 0.3: "30%", 0.4: "40%", 0.5: "50%",
@@ -42,14 +43,14 @@ class Renderer:
     def __init__(self, world: World, cfg: "Config"):
         self.world = world
         self.cfg = cfg
-        pw = cfg.panel_w
-        self.screen_w = world.width + pw
+        self.screen_w = world.width + cfg.panel_w
         self.screen_h = world.height
         self.screen = pygame.display.set_mode((self.screen_w, self.screen_h))
         pygame.display.set_caption("Village Simulation — L'égoïsme")
-        self.font_s = pygame.font.SysFont("monospace", 12)
-        self.font_m = pygame.font.SysFont("monospace", 15, bold=True)
-        self.font_l = pygame.font.SysFont("monospace", 20, bold=True)
+        self.font_s  = pygame.font.SysFont("monospace", 12)
+        self.font_m  = pygame.font.SysFont("monospace", 15, bold=True)
+        self.font_l  = pygame.font.SysFont("monospace", 20, bold=True)
+        self.font_xl = pygame.font.SysFont("monospace", 26, bold=True)
         # Pre-render vision surfaces (one per strategy)
         vr = cfg.vision_radius
         self._vision_surfs = {}
@@ -59,9 +60,11 @@ class Renderer:
             pygame.draw.circle(surf, (*color, 55), (vr, vr), vr, 2)
             self._vision_surfs[s] = surf
 
-    def draw(self, paused: bool = False, speed: int = 1):
+    # ── Main draw ─────────────────────────────────────────────────────────────
+
+    def draw(self, paused: bool = False, speed: int = 1, step_in_day: int = 0):
         cfg = self.cfg
-        w = self.world
+        w   = self.world
         self.screen.fill(BG_COLOR)
         self._draw_grid()
         if cfg.show_tents:
@@ -70,6 +73,7 @@ class Renderer:
         if cfg.enable_cows:
             self._draw_cows(w)
         self._draw_agents(w)
+        self._draw_clock(w, step_in_day, cfg.day_steps)
         self._draw_hud(w, paused, speed)
         self._draw_panel(w)
         pygame.display.flip()
@@ -114,26 +118,47 @@ class Renderer:
             if a.partner_id is not None:
                 pygame.draw.circle(self.screen, (255, 255, 100), (x, y), 9, 2)
 
-    # ── HUD ───────────────────────────────────────────────────────────────────
+    # ── Day clock ─────────────────────────────────────────────────────────────
+
+    def _draw_clock(self, w: World, step_in_day: int, day_steps: int):
+        cx = self.world.width - 58
+        cy = self.screen_h - 58
+        r  = 40
+        progress = step_in_day / max(day_steps, 1)
+
+        # Background disc
+        pygame.draw.circle(self.screen, (20, 20, 30), (cx, cy), r)
+        pygame.draw.circle(self.screen, GREY, (cx, cy), r, 2)
+
+        # Progress arc (clockwise from 12 o'clock)
+        if progress > 0.001:
+            arc_rect = pygame.Rect(cx - r + 4, cy - r + 4, (r - 4) * 2, (r - 4) * 2)
+            start_a  = math.pi / 2 - progress * 2 * math.pi
+            end_a    = math.pi / 2
+            pygame.draw.arc(self.screen, (100, 220, 120), arc_rect, start_a, end_a, 6)
+
+        # Day number in center
+        day_surf = self.font_m.render(f"J{w.day}", True, WHITE)
+        self.screen.blit(day_surf, (cx - day_surf.get_width() // 2, cy - day_surf.get_height() // 2))
+
+    # ── HUD (top-left overlay) ─────────────────────────────────────────────────
 
     def _draw_hud(self, w: World, paused: bool, speed: int):
         lines = [
             f"Jour {w.day}",
             f"Population: {len(w.living_agents)}",
-            f"Tentes: {w.num_tents}  (cap {w.village_capacity})",
             f"Vitesse: x{speed}  [+/-]",
         ]
         if paused:
             lines.append("PAUSE  [ESPACE]")
-        if w.stats:
-            lines.append(f"Pref moy: {w.stats[-1].get('mean_pref', 0.5):.2f}")
+
         y = 8
         for line in lines:
             surf = self.font_m.render(line, True, WHITE)
-            pad = 4
-            bg = pygame.Surface((surf.get_width() + pad * 2, surf.get_height() + pad), pygame.SRCALPHA)
+            pad  = 4
+            bg   = pygame.Surface((surf.get_width() + pad * 2, surf.get_height() + pad), pygame.SRCALPHA)
             bg.fill((0, 0, 0, 140))
-            self.screen.blit(bg, (8 - pad, y - pad // 2))
+            self.screen.blit(bg,   (8 - pad, y - pad // 2))
             self.screen.blit(surf, (8, y))
             y += surf.get_height() + 4
 
@@ -141,58 +166,130 @@ class Renderer:
 
     def _draw_panel(self, w: World):
         cfg = self.cfg
-        px = w.width
-        pw = cfg.panel_w
+        px  = w.width
+        pw  = cfg.panel_w
         pygame.draw.rect(self.screen, PANEL_BG, (px, 0, pw, self.screen_h))
         pygame.draw.line(self.screen, GREY, (px, 0), (px, self.screen_h), 2)
 
-        y = 14
+        y = 12
+
+        # ── Strategy distribution ──────────────────────────────────────────────
         self.screen.blit(self.font_l.render("Stratégies", True, WHITE), (px + 10, y))
-        y += 36
+        y += 32
 
-        if not w.living_agents:
-            return
+        if w.living_agents:
+            counts = {s: 0 for s in STRATEGIES}
+            for a in w.living_agents:
+                counts[a.share_pref] += 1
+            max_count  = max(counts.values()) or 1
+            bar_area_w = pw - 90
+            bar_h, gap = 20, 5
 
-        counts = {s: 0 for s in STRATEGIES}
-        for a in w.living_agents:
-            counts[a.share_pref] += 1
-        max_count = max(counts.values()) or 1
-        bar_area_w = pw - 90
-        bar_h, gap = 22, 6
+            for s in STRATEGIES:
+                count = counts[s]
+                color = STRATEGY_COLORS[s]
+                self.screen.blit(self.font_s.render(STRATEGY_LABELS[s], True, GREY), (px + 8, y + 3))
+                bw = int(bar_area_w * count / max_count)
+                if bw > 0:
+                    pygame.draw.rect(self.screen, color, (px + 48, y, bw, bar_h))
+                pygame.draw.rect(self.screen, GREY, (px + 48, y, bar_area_w, bar_h), 1)
+                self.screen.blit(self.font_s.render(str(count), True, WHITE), (px + 54 + bar_area_w, y + 3))
+                y += bar_h + gap
 
-        for s in STRATEGIES:
-            count = counts[s]
-            color = STRATEGY_COLORS[s]
-            self.screen.blit(self.font_s.render(STRATEGY_LABELS[s], True, GREY), (px + 8, y + 4))
-            bw = int(bar_area_w * count / max_count)
-            if bw > 0:
-                pygame.draw.rect(self.screen, color, (px + 48, y, bw, bar_h))
-            pygame.draw.rect(self.screen, GREY, (px + 48, y, bar_area_w, bar_h), 1)
-            self.screen.blit(self.font_s.render(str(count), True, WHITE), (px + 54 + bar_area_w, y + 4))
-            y += bar_h + gap
+        y += 10
+        _hline(self.screen, GREY, px + 8, px + pw - 8, y)
+        y += 10
 
+        # ── Today's stats ─────────────────────────────────────────────────────
+        self.screen.blit(self.font_m.render("Aujourd'hui", True, WHITE), (px + 10, y))
+        y += 24
+
+        today = w.stats[-1] if w.stats else {}
+        rows = [
+            ("🥕 Carottes",  str(today.get("carrots", w.day_carrots))),
+            ("🐄 Vaches",    str(today.get("cows",    w.day_cows))),
+            ("👥 Pop",       str(today.get("pop",     len(w.living_agents)))),
+        ]
+        if today.get("mean_pref") is not None:
+            rows.append(("⚖  Pref moy", f"{today['mean_pref']:.2f}"))
+
+        for label, value in rows:
+            lsurf = self.font_s.render(label, True, GREY)
+            vsurf = self.font_s.render(value, True, WHITE)
+            self.screen.blit(lsurf, (px + 10, y))
+            self.screen.blit(vsurf, (px + pw - vsurf.get_width() - 10, y))
+            y += 18
+
+        y += 8
+        _hline(self.screen, GREY, px + 8, px + pw - 8, y)
+        y += 10
+
+        # ── Historical charts ─────────────────────────────────────────────────
         if len(w.stats) > 1:
-            y += 36
-            self.screen.blit(self.font_s.render("Préférence moyenne", True, GREY), (px + 10, y))
-            y += 16
-            chart_h, chart_w = 80, pw - 20
-            pygame.draw.rect(self.screen, (30, 30, 50), (px + 10, y, chart_w, chart_h))
-            pygame.draw.rect(self.screen, GREY, (px + 10, y, chart_w, chart_h), 1)
-            prefs = [s.get("mean_pref", 0.5) for s in w.stats][-chart_w:]
-            pts = [
-                (px + 10 + i * chart_w // max(len(prefs), 1),
-                 y + chart_h - int((p - 0.1) / 0.8 * chart_h))
-                for i, p in enumerate(prefs)
-            ]
-            if len(pts) >= 2:
-                pygame.draw.lines(self.screen, (100, 200, 255), False, pts, 2)
-            ref_y = y + chart_h - int((0.5 - 0.1) / 0.8 * chart_h)
-            pygame.draw.line(self.screen, (80, 80, 80), (px + 10, ref_y), (px + 10 + chart_w, ref_y))
-            self.screen.blit(self.font_s.render("0.5", True, GREY), (px + 14, ref_y - 10))
+            chart_w = pw - 20
+            # Carrots per day
+            y = _draw_history_chart(
+                self.screen, self.font_s, w.stats, "carrots",
+                (255, 140, 0), "Carottes / jour",
+                px + 10, y, chart_w, 60,
+            )
+            y += 10
+            # Cows per day (only if cows enabled)
+            if cfg.enable_cows:
+                y = _draw_history_chart(
+                    self.screen, self.font_s, w.stats, "cows",
+                    (160, 110, 60), "Vaches / jour",
+                    px + 10, y, chart_w, 50,
+                )
+                y += 10
+            # Mean preference
+            y = _draw_history_chart(
+                self.screen, self.font_s, w.stats, "mean_pref",
+                (100, 200, 255), "Préf. moyenne",
+                px + 10, y, chart_w, 60,
+                y_range=(0.1, 0.9),
+            )
 
-        y = self.screen_h - 52
+        # Controls at bottom
+        ctrl_y = self.screen_h - 52
         for c in ["[ESPACE] pause", "[+/-] vitesse", "[R] reset"]:
-            self.screen.blit(self.font_s.render(c, True, GREY), (px + 10, y))
-            y += 16
+            self.screen.blit(self.font_s.render(c, True, GREY), (px + 10, ctrl_y))
+            ctrl_y += 16
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _hline(surface, color, x1, x2, y):
+    pygame.draw.line(surface, color, (x1, y), (x2, y))
+
+
+def _draw_history_chart(surface, font, stats, key, color, title,
+                        x, y, w, h, y_range=None):
+    """Draw a small line chart. Returns the new y position below the chart."""
+    surface.blit(font.render(title, True, GREY), (x, y))
+    y += 14
+    pygame.draw.rect(surface, (30, 30, 50), (x, y, w, h))
+    pygame.draw.rect(surface, GREY, (x, y, w, h), 1)
+
+    values = [s.get(key, 0) for s in stats]
+    visible = values[-(w):]  # at most w data points
+    if len(visible) < 2:
+        return y + h
+
+    lo, hi = y_range if y_range else (0, max(max(visible), 1))
+    span = hi - lo or 1
+    n    = len(visible)
+    pts  = []
+    for i, v in enumerate(visible):
+        sx = x + i * w // (n - 1)
+        sy = y + h - int((v - lo) / span * (h - 2)) - 1
+        pts.append((sx, max(y + 1, min(y + h - 1, sy))))
+
+    pygame.draw.lines(surface, color, False, pts, 2)
+
+    # Min / max labels
+    max_v = max(visible)
+    lbl   = font.render(f"{max_v:.1f}" if isinstance(max_v, float) else str(max_v), True, color)
+    surface.blit(lbl, (x + 2, y + 1))
+
+    return y + h

@@ -22,6 +22,8 @@ class World:
         self.next_id = 0
         self.village_capacity = cfg.tent_capacity
         self.stats: List[dict] = []
+        self.day_carrots = 0   # carrots collected this day
+        self.day_cows    = 0   # cows hunted this day
 
         self._init_population()
         self._spawn_resources()
@@ -115,6 +117,8 @@ class Simulation:
                 tent_idx = min(a.home_tent, len(tents) - 1)
                 a.x, a.y = _spawn_near_tent(tents[tent_idx], w.cfg)
             a.vx, a.vy = _random_velocity(w.cfg.agent_speed)
+        w.day_carrots = 0
+        w.day_cows    = 0
         w.carrots = [c for c in w.carrots if c.active]
         if w.cfg.enable_cows:
             w.cows = [c for c in w.cows if c.active]
@@ -194,6 +198,7 @@ def _collect_carrots(w: World):
             if _dist(a.x, a.y, c.x, c.y) < r:
                 a.score += w.cfg.carrot_value
                 c.active = False
+                w.day_carrots += 1
                 break
 
 
@@ -212,6 +217,7 @@ def _perform_hunts(w: World):
         a1.partner_id = a2.id
         a2.partner_id = a1.id
         cow.active = False
+        w.day_cows += 1
         available.remove(a1)
         available.remove(a2)
 
@@ -306,6 +312,8 @@ def _record_stats(w: World):
         "pop": len(living),
         "dist": dist,
         "mean_pref": sum(a.share_pref for a in living) / len(living),
+        "carrots": w.day_carrots,
+        "cows":    w.day_cows,
     })
 
 
