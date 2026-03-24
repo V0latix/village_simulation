@@ -1,7 +1,7 @@
 import sys
-import csv
+import json
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import pygame
 from simulation import World, Simulation
 from renderer import Renderer
@@ -22,8 +22,8 @@ class Config:
     world_h:      int   = 850
 
     # ── Resources ─────────────────────────────────────────────────────────────
-    target_carrots:     int   = 300
-    target_cows:        int   = 16
+    target_carrots:     int   = 200
+    target_cows:        int   = 25
     carrot_value:       float = 1.0
     cow_value:          float = 10.0
 
@@ -64,21 +64,22 @@ STEPS_PER_SEC_BASE = cfg.day_steps / 60.0
 
 
 def _save_stats(world: World):
+    import os
+    os.makedirs("simulations", exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"simulation_{ts}.csv"
-    with open(filename, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["day", "pop", "mean_pref", "carrots", "cows"] +
-                        [f"strat_{s}" for s in [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]])
-        for s in world.stats:
-            dist = s.get("dist", {})
-            writer.writerow([
-                s.get("day", ""),
-                s.get("pop", ""),
-                f"{s['mean_pref']:.4f}" if s.get("mean_pref") is not None else "",
-                s.get("carrots", ""),
-                s.get("cows", ""),
-            ] + [dist.get(k, 0) for k in [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]])
+    filename = f"simulations/simulation_{ts}.json"
+    history = []
+    for s in world.stats:
+        entry = {k: v for k, v in s.items() if k != "dist"}
+        if "dist" in s:
+            entry["dist"] = {str(k): v for k, v in s["dist"].items()}
+        history.append(entry)
+    data = {
+        "parameters": asdict(cfg),
+        "history": history,
+    }
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=2)
     print(f"Simulation sauvegardée : {filename}")
 
 

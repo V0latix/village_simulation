@@ -27,7 +27,8 @@ class World:
         self._living:  List[Agent]  = []
         self._carrots: List[Carrot] = []
         self._cows:    List[Cow]    = []
-        self._grid = SpatialGrid(cell_size=max(cfg.vision_radius, 1))
+        self._grid     = SpatialGrid(cell_size=max(cfg.vision_radius, 1))
+        self._cow_grid = SpatialGrid(cell_size=max(cfg.hunt_radius, 1))
 
         self._init_population()
         self._spawn_resources()
@@ -135,6 +136,8 @@ class Simulation:
         w._carrots = [c for c in w.carrots if c.active]
         w._cows    = [c for c in w.cows    if c.active] if w.cfg.enable_cows else []
         w._grid.build(w._carrots)  # spatial index for fast vision queries
+        if w.cfg.enable_cows:
+            w._cow_grid.build(w._cows)
         _move_agents(w)
         if w.cfg.enable_cows:
             _move_cows(w)
@@ -171,7 +174,7 @@ def _move_agents(w: World):
                 a.vx = dx / d * cfg.agent_speed
                 a.vy = dy / d * cfg.agent_speed
         elif cfg.enable_cows and not a.hunted_today:
-            cow_target = _nearest_in_range(a.x, a.y, w._cows, cfg.vision_radius)
+            cow_target = w._cow_grid.nearest_in_radius(a.x, a.y, cfg.vision_radius)
             if cow_target is not None:
                 dx = cow_target.x - a.x
                 dy = cow_target.y - a.y
@@ -198,15 +201,6 @@ def _move_cows(w: World):
         c.y = (c.y + c.vy) % w.height
 
 
-def _nearest_in_range(x, y, items, radius):
-    best, best_d = None, radius
-    for item in items:
-        d = _dist(x, y, item.x, item.y)
-        if d < best_d:
-            best_d = d
-            best = item
-    return best
-
 
 class SpatialGrid:
     """Buckets items by grid cell for fast radius queries."""
@@ -224,19 +218,19 @@ class SpatialGrid:
             self.grid[key].append(item)
 
     def nearest_in_radius(self, x, y, radius):
-        c      = self.cell
-        steps  = math.ceil(radius / c) + 1
-        cx, cy = int(x / c), int(y / c)
-        best, best_d = None, radius
+        c       = self.cell
+        steps   = math.ceil(radius / c) + 1
+        cx, cy  = int(x / c), int(y / c)
+        best, best_d2 = None, radius * radius
         for dx in range(-steps, steps + 1):
             for dy in range(-steps, steps + 1):
                 bucket = self.grid.get((cx + dx, cy + dy))
                 if bucket:
                     for item in bucket:
-                        d = _dist(x, y, item.x, item.y)
-                        if d < best_d:
-                            best_d = d
-                            best   = item
+                        d2 = (x - item.x) ** 2 + (y - item.y) ** 2
+                        if d2 < best_d2:
+                            best_d2 = d2
+                            best    = item
         return best
 
 
@@ -245,22 +239,22 @@ class SpatialGrid:
 def _collect_carrots(w: World):
     r = w.cfg.collect_radius
     for a in w._living:
-        for c in w._carrots:
-            if _dist(a.x, a.y, c.x, c.y) < r:
-                a.score += w.cfg.carrot_value
-                c.active = False
-                w.day_carrots += 1
-                break
+        carrot = w._grid.nearest_in_radius(a.x, a.y, r)
+        if carrot is not None:
+            a.score += w.cfg.carrot_value
+            carrot.active = False
+            w.day_carrots += 1
 
 
 # ── Cooperative hunting ────────────────────────────────────────────────────────
 
 def _try_hunts(w: World):
     hunters = [a for a in w._living if not a.hunted_today]
+    hr2 = w.cfg.hunt_radius ** 2
     for cow in w._cows:
         if not cow.active:
             continue
-        nearby = [a for a in hunters if _dist(a.x, a.y, cow.x, cow.y) < w.cfg.hunt_radius]
+        nearby = [a for a in hunters if (a.x - cow.x) ** 2 + (a.y - cow.y) ** 2 < hr2]
         if len(nearby) < 2:
             continue
         a1, a2 = nearby[0], nearby[1]

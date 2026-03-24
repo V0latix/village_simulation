@@ -110,10 +110,13 @@ class Renderer:
 
     def _draw_agents(self, w: World):
         vr = self.cfg.vision_radius
-        for a in w.living_agents:
+        living = w.living_agents
+        show_vision = len(living) <= 60  # skip overlapping circles when pop is large
+        for a in living:
             x, y = int(a.x), int(a.y)
             color = STRATEGY_COLORS[a.share_pref]
-            self.screen.blit(self._vision_surfs[a.share_pref], (x - vr, y - vr))
+            if show_vision:
+                self.screen.blit(self._vision_surfs[a.share_pref], (x - vr, y - vr))
             pygame.draw.circle(self.screen, color, (x, y), 7)
             pygame.draw.circle(self.screen, WHITE, (x, y), 7, 1)
             if a.partner_id is not None:
