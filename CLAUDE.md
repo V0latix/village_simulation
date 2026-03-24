@@ -2,10 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Running the simulation
+## Repo structure
+
+Each simulation version lives in its own subfolder:
+
+| Folder | Description |
+|---|---|
+| `egoism_V0_1/` | Initial egoism simulation (sharing rule, evolutionary dynamics) |
+
+## Running a simulation
 
 ```bash
-python3 main.py
+cd egoism_V0_1
+python3 main_egoismV0_1.py
 ```
 
 Controls: `Space` = pause, `+`/`-` = speed up/down, `R` = reset, `Esc` = quit.
@@ -20,7 +29,7 @@ LDFLAGS="-L/opt/homebrew/lib" CFLAGS="-I/opt/homebrew/include" \
   pip3 install pygame --no-cache-dir --break-system-packages
 ```
 
-## Architecture
+## Architecture (egoism_V0_1)
 
 Four files, each with a single responsibility:
 
@@ -29,7 +38,7 @@ Four files, each with a single responsibility:
 | `entities.py` | Pure data: `Agent`, `Carrot`, `Cow` dataclasses |
 | `simulation.py` | All game logic: `World` (state) + `Simulation` (day orchestration) |
 | `renderer.py` | All pygame drawing: world, agents, HUD, stats panel |
-| `main.py` | Entry point: pygame event loop, wires the other three |
+| `main_egoismV0_1.py` | Entry point: pygame event loop, wires the other three |
 
 ### Simulation loop (`simulation.py`)
 
